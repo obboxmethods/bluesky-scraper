@@ -1,0 +1,6 @@
+.env
+.session.json
+data/
+__pycache__/
+*.env
+!.env.example

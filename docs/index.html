@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bluesky Scraper</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5d6673; --border: #d9dde3;
+  --accent: #1366d6; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+  --log-bg: #0f1419; --log-text: #d6dde6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1419; --panel: #171d24; --text: #e6ebf0; --muted: #94a0ad; --border: #2c3540;
+    --accent: #4c9aff; --accent-text: #0b0f14; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+    --log-bg: #0a0d11; --log-text: #c9d1d9;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+h2 { font-size: 1.1rem; margin: 0 0 12px; }
+p.sub { color: var(--muted); margin: 0 0 20px; }
+section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 18px; margin-bottom: 18px; }
+label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+input, select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font: inherit; }
+input[type=checkbox] { width: auto; margin-right: 6px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+button { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel);
+  color: var(--text); font: inherit; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.small { padding: 4px 8px; font-size: .85rem; }
+.tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; }
+.tabs button.active { border-bottom-color: var(--accent); font-weight: 600; }
+.hidden { display: none !important; }
+.status { font-size: .9rem; }
+.status.ok { color: var(--ok); } .status.err { color: var(--err); } .status.warn { color: var(--warn); }
+.hint { font-size: .85rem; color: var(--muted); margin-top: 8px; }
+#log { background: var(--log-bg); color: var(--log-text); font: 12.5px/1.45 ui-monospace, Menlo, Consolas, monospace;
+  border-radius: 6px; padding: 10px; height: 200px; overflow-y: auto; white-space: pre-wrap; margin-top: 12px; }
+.progress { font-size: 1.05rem; font-weight: 600; margin-top: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+td.actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.table-wrap { overflow-x: auto; }
+.badge { font-size: .78rem; padding: 2px 6px; border-radius: 10px; border: 1px solid var(--border); white-space: nowrap; }
+.badge.done { color: var(--ok); border-color: var(--ok); }
+.badge.running { color: var(--accent); border-color: var(--accent); }
+.badge.stopped { color: var(--warn); border-color: var(--warn); }
+.badge.error { color: var(--err); border-color: var(--err); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bluesky Scraper</h1>
+  <p class="sub">Raccolta di post da Bluesky per la ricerca e la didattica. Tutto avviene nel tuo browser: le credenziali non vengono inviate a nessuno tranne Bluesky.</p>
+
+  <!-- ========== LOGIN ========== -->
+  <section id="login-section">
+    <h2>Accesso</h2>
+    <div id="login-form">
+      <div class="grid">
+        <div><label for="handle">Handle Bluesky</label><input id="handle" placeholder="nome.bsky.social" autocomplete="username"></div>
+        <div><label for="apppw">App password</label><input id="apppw" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password"></div>
+      </div>
+      <div class="row">
+        <button class="primary" id="btn-login">Accedi</button>
+        <label style="margin:0"><input type="checkbox" id="remember">Ricordami su questo dispositivo</label>
+        <span id="login-status" class="status"></span>
+      </div>
+      <p class="hint">Usa una <b>app password</b>, non la password principale: Bluesky › Impostazioni › Privacy e sicurezza › App password.
+        L'accesso serve per la ricerca; i post di un singolo utente si possono scaricare anche senza accedere.</p>
+    </div>
+    <div id="logged-in" class="hidden row" style="margin-top:0">
+      <span class="status ok">Connesso come <b id="who"></b></span>
+      <button id="btn-logout" class="small">Esci</button>
+    </div>
+  </section>
+
+  <!-- ========== NUOVA RACCOLTA ========== -->
+  <section>
+    <div class="tabs">
+      <button class="active" data-tab="search">Ricerca per termine / hashtag</button>
+      <button data-tab="user">Post di un utente</button>
+    </div>
+
+    <div id="tab-search">
+      <div class="grid">
+        <div style="grid-column: 1 / -1"><label for="q">Termine di ricerca</label>
+          <input id="q" placeholder='es. clima, #elezioni, "frase esatta", from:utente.bsky.social'></div>
+        <div><label for="s-since">Dal (incluso)</label><input id="s-since" type="date"></div>
+        <div><label for="s-until">Al (incluso)</label><input id="s-until" type="date"></div>
+        <div><label for="s-lang">Lingua</label><input id="s-lang" placeholder="es. it, en"></div>
+        <div><label for="s-author">Solo dell'utente</label><input id="s-author" placeholder="handle (opzionale)"></div>
+        <div><label for="s-domain">Solo con link a dominio</label><input id="s-domain" placeholder="es. repubblica.it"></div>
+        <div><label for="s-max">Numero massimo di post</label><input id="s-max" type="number" min="1" placeholder="nessun limite"></div>
+      </div>
+      <div class="row"><label style="margin:0"><input type="checkbox" id="s-profiles" checked>Scarica anche i profili completi degli autori (follower, bio…)</label></div>
+      <div class="row"><button class="primary" id="btn-search">Avvia ricerca</button></div>
+      <p class="hint" id="search-needs-login">La ricerca richiede l'accesso.</p>
+    </div>
+
+    <div id="tab-user" class="hidden">
+      <div class="grid">
+        <div><label for="u-actor">Utente</label><input id="u-actor" placeholder="nome.bsky.social"></div>
+        <div><label for="u-filter">Contenuti</label>
+          <select id="u-filter">
+            <option value="posts_with_replies">Post e risposte</option>
+            <option value="posts_no_replies">Solo post (senza risposte)</option>
+            <option value="posts_and_author_threads">Post e thread dell'autore</option>
+            <option value="posts_with_media">Solo post con media</option>
+          </select></div>
+        <div><label for="u-since">Fino a risalire al (opzionale)</label><input id="u-since" type="date"></div>
+        <div><label for="u-max">Numero massimo di post</label><input id="u-max" type="number" min="1" placeholder="nessun limite"></div>
+      </div>
+      <div class="row"><label style="margin:0"><input type="checkbox" id="u-reposts">Includi i repost (post di altri ricondivisi dall'utente)</label></div>
+      <div class="row"><button class="primary" id="btn-user">Scarica post dell'utente</button></div>
+    </div>
+
+    <div id="run-panel" class="hidden">
+      <div class="progress" id="progress"></div>
+      <div class="row" style="margin-top:8px"><button id="btn-stop">Interrompi</button>
+        <span class="hint" style="margin:0">Puoi riprendere in seguito da “Le mie raccolte”. Tieni aperta questa scheda durante lo scaricamento.</span></div>
+      <div id="log"></div>
+    </div>
+  </section>
+
+  <!-- ========== RACCOLTE ========== -->
+  <section>
+    <h2>Le mie raccolte</h2>
+    <p class="hint" style="margin-top:-6px">Salvate nella memoria di questo browser. Scarica i file per conservarle.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Raccolta</th><th>Post</th><th>Stato</th><th>Creata</th><th>Azioni</th></tr></thead>
+        <tbody id="jobs"></tbody>
+      </table>
+    </div>
+    <p class="hint" id="no-jobs">Nessuna raccolta ancora.</p>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+/* =====================================================================
+ * Client XRPC: sessione, refresh token, rate limit
+ * ===================================================================== */
+
+const ENTRYWAY = "https://bsky.social";
+const PUBLIC_APPVIEW = "https://public.api.bsky.app";
+const MIN_INTERVAL = 350;   // ms tra richieste: 3000 req / 5 min per IP ~ 10/s
+const MAX_WAIT = 300;       // s: oltre questa attesa ci si ferma invece di bloccarsi
+const SESSION_KEY = "bsky_session";
+
+class BskyError extends Error {
+  constructor(status, error, message) {
+    super(`HTTP ${status} ${error || ""}: ${message || ""}`);
+    this.status = status; this.error = error;
+  }
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const client = {
+  session: null,
+  lastRequest: 0,
+  stopRequested: false,
+
+  get service() { return this.session ? this.session.service : PUBLIC_APPVIEW; },
+
+  loadSession() {
+    const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
+    this.session = raw ? JSON.parse(raw) : null;
+  },
+
+  storeSession(data, remember) {
+    let service = ENTRYWAY;
+    for (const svc of (data.didDoc && data.didDoc.service) || []) {
+      if (svc.id === "#atproto_pds") service = svc.serviceEndpoint;
+    }
+    if (remember === undefined) remember = !!localStorage.getItem(SESSION_KEY);
+    this.session = { did: data.did, handle: data.handle, accessJwt: data.accessJwt,
+                     refreshJwt: data.refreshJwt, service };
+    localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY);
+    (remember ? localStorage : sessionStorage).setItem(SESSION_KEY, JSON.stringify(this.session));
+  },
+
+  async login(identifier, password, remember) {
+    const data = await this.raw("POST", ENTRYWAY, "com.atproto.server.createSession",
+                                { body: { identifier, password } });
+    this.storeSession(data, remember);
+  },
+
+  async refresh() {
+    const data = await this.raw("POST", this.session.service, "com.atproto.server.refreshSession",
+                                { token: this.session.refreshJwt });
+    this.storeSession(data);
+  },
+
+  async logout() {
+    if (this.session) {
+      try { await this.raw("POST", this.session.service, "com.atproto.server.deleteSession",
+                           { token: this.session.refreshJwt }); } catch (e) { /* ignora */ }
+    }
+    this.session = null;
+    localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY);
+  },
+
+  /** GET autenticato se c'è una sessione, altrimenti sull'AppView pubblica. */
+  async get(nsid, params) {
+    try {
+      return await this.raw("GET", this.service, nsid, { params, token: this.session && this.session.accessJwt });
+    } catch (e) {
+      if (this.session && (e.error === "ExpiredToken" || e.error === "InvalidToken")) {
+        await this.refresh();
+        return await this.raw("GET", this.service, nsid, { params, token: this.session.accessJwt });
+      }
+      throw e;
+    }
+  },
+
+  async raw(method, base, nsid, { params, body, token } = {}) {
+    const url = new URL(`${base}/xrpc/${nsid}`);
+    for (const [k, v] of Object.entries(params || {})) {
+      if (v === undefined || v === null || v === "") continue;
+      if (Array.isArray(v)) v.forEach(x => url.searchParams.append(k, x));
+      else url.searchParams.set(k, v);
+    }
+    const headers = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (body) headers["Content-Type"] = "application/json";
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const wait = MIN_INTERVAL - (Date.now() - this.lastRequest);
+      if (wait > 0) await sleep(wait);
+      this.lastRequest = Date.now();
+
+      let r;
+      try {
+        r = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+      } catch (e) {
+        const delay = Math.min(2 ** attempt, 60);
+        log(`! errore di rete, riprovo tra ${delay}s`, "warn");
+        await sleep(delay * 1000);
+        continue;
+      }
+
+      if (r.status === 429) {
+        const delay = secondsToReset(r) || Math.min(2 ** attempt * 5, 300);
+        if (delay > MAX_WAIT) {
+          const at = new Date(Date.now() + delay * 1000).toLocaleString("it-IT");
+          throw new BskyError(429, "RateLimitExceeded", `limite esaurito, riprova dopo ${at}`);
+        }
+        log(`! limite di richieste raggiunto, attendo ${delay}s`, "warn");
+        await sleep(delay * 1000);
+        continue;
+      }
+      if (r.status >= 500) {
+        const delay = Math.min(2 ** attempt, 60);
+        log(`! errore del server (${r.status}), riprovo tra ${delay}s`, "warn");
+        await sleep(delay * 1000);
+        continue;
+      }
+      if (r.status >= 400) {
+        let b = {};
+        try { b = await r.json(); } catch (e) { b = { error: "HTTPError", message: r.statusText }; }
+        throw new BskyError(r.status, b.error, b.message);
+      }
+      // Pausa preventiva solo se la finestra si azzera a breve
+      const remaining = parseInt(r.headers.get("ratelimit-remaining"), 10);
+      const delay = secondsToReset(r);
+      if (remaining < 10 && delay && delay <= MAX_WAIT) {
+        log(`~ quasi al limite (${remaining} rimaste), pausa di ${delay}s`, "warn");
+        await sleep(delay * 1000);
+      }
+      return await r.json();
+    }
+    throw new BskyError(0, "MaxRetries", `troppi tentativi falliti per ${nsid}`);
+  },
+};
+
+/** ratelimit-reset di Bluesky è un timestamp Unix assoluto. */
+function secondsToReset(r) {
+  const reset = parseInt(r.headers.get("ratelimit-reset"), 10);
+  return Number.isFinite(reset) ? Math.max(reset - Math.floor(Date.now() / 1000), 1) : null;
+}
+
+/* =====================================================================
+ * Archivio locale (IndexedDB): raccolte, post, profili
+ * ===================================================================== */
+
+const db = {
+  conn: null,
+  open() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open("bsky_scraper", 1);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        d.createObjectStore("jobs", { keyPath: "id" });
+        d.createObjectStore("posts", { keyPath: ["jobId", "uri"] }).createIndex("job", "jobId");
+        d.createObjectStore("profiles", { keyPath: ["jobId", "did"] }).createIndex("job", "jobId");
+      };
+      req.onsuccess = () => { this.conn = req.result; resolve(); };
+      req.onerror = () => reject(req.error);
+    });
+  },
+  tx(stores, mode, fn) {
+    return new Promise((resolve, reject) => {
+      const t = this.conn.transaction(stores, mode);
+      let result;
+      t.oncomplete = () => resolve(result);
+      t.onerror = () => reject(t.error);
+      result = fn(t);
+    });
+  },
+  putJob(job) { return this.tx("jobs", "readwrite", t => { t.objectStore("jobs").put(job); }); },
+  getJob(id) {
+    return new Promise((res, rej) => {
+      const r = this.conn.transaction("jobs").objectStore("jobs").get(id);
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+  },
+  allJobs() {
+    return new Promise((res, rej) => {
+      const r = this.conn.transaction("jobs").objectStore("jobs").getAll();
+      r.onsuccess = () => res(r.result.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      r.onerror = () => rej(r.error);
+    });
+  },
+  /** Salva i post nuovi e aggiorna la raccolta in un'unica transazione. */
+  savePage(job, rows) {
+    return this.tx(["posts", "jobs"], "readwrite", t => {
+      const store = t.objectStore("posts");
+      for (const data of rows) store.put({ jobId: job.id, uri: data.uri, data });
+      t.objectStore("jobs").put(job);
+    });
+  },
+  saveProfiles(jobId, profiles) {
+    return this.tx("profiles", "readwrite", t => {
+      const store = t.objectStore("profiles");
+      for (const p of profiles) store.put({ jobId, did: p.did, data: p });
+    });
+  },
+  all(store, jobId) {
+    return new Promise((res, rej) => {
+      const r = this.conn.transaction(store).objectStore(store).index("job").getAll(jobId);
+      r.onsuccess = () => res(r.result.map(x => x.data)); r.onerror = () => rej(r.error);
+    });
+  },
+  allKeys(store, jobId) {
+    return new Promise((res, rej) => {
+      const r = this.conn.transaction(store).objectStore(store).index("job").getAllKeys(jobId);
+      r.onsuccess = () => res(r.result.map(k => k[1])); r.onerror = () => rej(r.error);
+    });
+  },
+  deleteJob(jobId) {
+    return this.tx(["jobs", "posts", "profiles"], "readwrite", t => {
+      t.objectStore("jobs").delete(jobId);
+      for (const s of ["posts", "profiles"]) {
+        const range = IDBKeyRange.bound([jobId], [jobId, []]);
+        t.objectStore(s).delete(range);
+      }
+    });
+  },
+};
+
+/* =====================================================================
+ * Raccolta: ricerca (con finestre temporali) e feed utente
+ * ===================================================================== */
+
+function parseTs(s) { const d = s ? new Date(s) : null; return d && !isNaN(d) ? d : null; }
+
+/** Timestamp usato dalla ricerca per since/until: min(createdAt, indexedAt). */
+function sortAt(post) {
+  const ts = [parseTs(post.record && post.record.createdAt), parseTs(post.indexedAt)].filter(Boolean);
+  return ts.length ? new Date(Math.min(...ts)) : null;
+}
+
+/**
+ * searchPosts smette di dare il cursore dopo un certo numero di risultati.
+ * Quando succede, si riparte con until = post più vecchio visto (finestre a ritroso),
+ * deduplicando per URI.
+ */
+async function runSearch(job, seen) {
+  const p = job.params;
+  const base = { q: p.q, sort: "latest", limit: 100, lang: p.lang, author: p.author,
+                 domain: p.domain, since: p.since };
+  while (!client.stopRequested) {
+    const params = { ...base, until: job.state.until, cursor: job.state.cursor };
+    const data = await client.get("app.bsky.feed.searchPosts", params);
+    const posts = data.posts || [];
+    let oldest = null;
+    const fresh = [];
+    for (const post of posts) {
+      const ts = sortAt(post);
+      if (ts && (!oldest || ts < oldest)) oldest = ts;
+      if (seen.has(post.uri)) continue;
+      seen.add(post.uri);
+      fresh.push(post);
+    }
+    job.count = seen.size;
+    if (data.hitsTotal) job.state.hitsTotal = data.hitsTotal;
+
+    if (p.max && job.count >= p.max) {
+      job.status = "done";
+    } else if (posts.length && data.cursor) {
+      job.state.cursor = data.cursor;
+    } else if (posts.length && oldest && fresh.length) {
+      job.state.until = oldest.toISOString();
+      job.state.cursor = null;
+    } else {
+      job.status = "done";
+    }
+    await db.savePage(job, fresh);
+    const est = job.state.hitsTotal ? `, stimati ~${job.state.hitsTotal}` : "";
+    const win = job.state.until ? ` · finestra fino a ${job.state.until.slice(0, 16).replace("T", " ")}` : "";
+    log(`+${fresh.length} post (totale ${job.count}${est})${win}`);
+    progress(job);
+    if (job.status === "done") break;
+  }
+}
+
+async function runUserFeed(job, seen) {
+  const p = job.params;
+  if (!job.state.did) {
+    const profile = await client.get("app.bsky.actor.getProfile", { actor: p.actor });
+    job.state.did = profile.did;
+    job.state.postsCount = profile.postsCount;
+    await db.saveProfiles(job.id, [profile]);
+    log(`Utente @${profile.handle} · ${profile.postsCount} post dichiarati nel profilo`);
+  }
+  const sinceDate = p.since ? new Date(p.since) : null;
+  while (!client.stopRequested) {
+    const data = await client.get("app.bsky.feed.getAuthorFeed",
+      { actor: job.state.did, filter: p.filter, limit: 100, cursor: job.state.cursor });
+    const fresh = [];
+    let reachedSince = false;
+    for (const item of data.feed || []) {
+      const isRepost = item.reason && item.reason.$type === "app.bsky.feed.defs#reasonRepost";
+      if (isRepost && !p.reposts) continue;
+      const created = parseTs(isRepost ? item.reason.indexedAt : item.post.record.createdAt);
+      const isPin = item.reason && item.reason.$type === "app.bsky.feed.defs#reasonPin";
+      if (sinceDate && created && created < sinceDate && !isPin) { reachedSince = true; continue; }
+      const post = isRepost
+        ? { ...item.post, _repostedBy: item.reason.by.handle, _repostedAt: item.reason.indexedAt }
+        : item.post;
+      const key = isRepost ? `${post.uri}#repost` : post.uri;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      fresh.push({ ...post, uri: key, _postUri: post.uri });
+    }
+    job.count = seen.size;
+    job.state.cursor = data.cursor || null;
+    if (!data.cursor || reachedSince || (p.max && job.count >= p.max)) job.status = "done";
+    await db.savePage(job, fresh);
+    const tot = job.state.postsCount && !p.reposts ? ` di ~${job.state.postsCount}` : "";
+    const last = data.feed && data.feed.length ? data.feed[data.feed.length - 1].post.record.createdAt : "";
+    log(`+${fresh.length} post (totale ${job.count}${tot}) · arrivato al ${last.slice(0, 10)}`);
+    progress(job);
+    if (job.status === "done") break;
+  }
+}
+
+async function fetchProfiles(job) {
+  const posts = await db.all("posts", job.id);
+  const done = new Set(await db.allKeys("profiles", job.id));
+  const todo = [...new Set(posts.map(p => p.author.did))].filter(d => !done.has(d));
+  if (!todo.length) return;
+  log(`Profili autori: ${todo.length} da scaricare`);
+  for (let i = 0; i < todo.length && !client.stopRequested; i += 25) {
+    const data = await client.get("app.bsky.actor.getProfiles", { actors: todo.slice(i, i + 25) });
+    await db.saveProfiles(job.id, data.profiles || []);
+    log(`  profili ${Math.min(i + 25, todo.length)}/${todo.length}`);
+  }
+}
+
+let running = false;
+
+async function runJob(job) {
+  if (running) return;
+  running = true;
+  client.stopRequested = false;
+  setRunning(true);
+  document.getElementById("log").textContent = "";
+  job.status = "running";
+  await db.putJob(job);
+  renderJobs();
+  log(`Avvio: ${job.title}`);
+  try {
+    const seen = new Set(await db.allKeys("posts", job.id));
+    if (seen.size) log(`Riprendo: ${seen.size} post già salvati`);
+    job.count = seen.size;
+    progress(job);
+    if (job.type === "search") await runSearch(job, seen);
+    else await runUserFeed(job, seen);
+    if (job.status === "done" && job.params.profiles) await fetchProfiles(job);
+    if (client.stopRequested && job.status !== "done") { job.status = "stopped"; log("Interrotto. Puoi riprendere più tardi.", "warn"); }
+    else if (job.status === "done") log(`Completato: ${job.count} post. Scarica i file da “Le mie raccolte”.`, "ok");
+  } catch (e) {
+    job.status = "error";
+    job.error = e.message;
+    log(`Errore: ${e.message}`, "err");
+    if (e.status === 401 || e.error === "AuthRequired") log("Questa operazione richiede l'accesso.", "err");
+  }
+  await db.putJob(job);
+  running = false;
+  setRunning(false);
+  renderJobs();
+}
+
+/* =====================================================================
+ * Esportazione: JSONL e CSV
+ * ===================================================================== */
+
+const CSV_FIELDS = [
+  "uri", "cid", "url", "created_at", "indexed_at",
+  "author_did", "author_handle", "author_display_name", "author_created_at",
+  "author_followers", "author_follows", "author_posts", "author_description",
+  "text", "langs", "hashtags", "mentions", "links",
+  "reply_count", "repost_count", "like_count", "quote_count", "bookmark_count",
+  "is_reply", "reply_parent_uri", "reply_root_uri",
+  "is_repost", "reposted_by", "reposted_at",
+  "embed_type", "image_count", "image_urls", "image_alts",
+  "video_playlist", "external_uri", "external_title", "external_description",
+  "quoted_uri", "quoted_author", "quoted_text",
+  "labels", "self_labels", "client_tags",
+];
+
+function embedFields(embed) {
+  const row = {};
+  if (!embed) return row;
+  const t = embed.$type || "";
+  row.embed_type = t.replace("app.bsky.embed.", "").replace("#view", "");
+  const isRwm = t.endsWith("recordWithMedia#view");
+  const media = isRwm ? embed.media : embed;
+  let record = t.includes("record") ? embed.record : null;
+  if (record && isRwm) record = record.record;
+  if (media) {
+    const mt = media.$type || "";
+    if (mt.endsWith("images#view")) {
+      const imgs = media.images || [];
+      row.image_count = imgs.length;
+      row.image_urls = imgs.map(i => i.fullsize || "").join(" | ");
+      row.image_alts = imgs.map(i => i.alt || "").join(" | ");
+    } else if (mt.endsWith("video#view")) {
+      row.video_playlist = media.playlist || "";
+    } else if (mt.endsWith("external#view")) {
+      const ext = media.external || {};
+      row.external_uri = ext.uri || ""; row.external_title = ext.title || "";
+      row.external_description = ext.description || "";
+    }
+  }
+  if (record && record.uri) {
+    row.quoted_uri = record.uri;
+    row.quoted_author = (record.author || {}).handle || "";
+    row.quoted_text = (record.value || {}).text || "";
+  }
+  return row;
+}
+
+function flatten(post, profiles) {
+  const record = post.record || {};
+  const author = post.author || {};
+  const profile = profiles.get(author.did) || {};
+  const tags = [], mentions = [], links = [];
+  for (const facet of record.facets || []) {
+    for (const f of facet.features || []) {
+      const t = f.$type || "";
+      if (t.endsWith("#tag")) tags.push(f.tag);
+      else if (t.endsWith("#mention")) mentions.push(f.did);
+      else if (t.endsWith("#link")) links.push(f.uri);
+    }
+  }
+  const uri = post._postUri || post.uri;
+  const reply = record.reply || {};
+  return {
+    uri, cid: post.cid,
+    url: `https://bsky.app/profile/${author.handle}/post/${uri.split("/").pop()}`,
+    created_at: record.createdAt, indexed_at: post.indexedAt,
+    author_did: author.did, author_handle: author.handle,
+    author_display_name: author.displayName || "", author_created_at: author.createdAt || "",
+    author_followers: profile.followersCount ?? "", author_follows: profile.followsCount ?? "",
+    author_posts: profile.postsCount ?? "", author_description: profile.description || "",
+    text: record.text || "", langs: (record.langs || []).join(","),
+    hashtags: [...tags, ...(record.tags || [])].join(","), mentions: mentions.join(","),
+    links: links.join(" | "),
+    reply_count: post.replyCount ?? 0, repost_count: post.repostCount ?? 0,
+    like_count: post.likeCount ?? 0, quote_count: post.quoteCount ?? 0,
+    bookmark_count: post.bookmarkCount ?? "",
+    is_reply: !!record.reply,
+    reply_parent_uri: (reply.parent || {}).uri || "", reply_root_uri: (reply.root || {}).uri || "",
+    is_repost: !!post._repostedBy, reposted_by: post._repostedBy || "", reposted_at: post._repostedAt || "",
+    labels: (post.labels || []).map(l => l.val).join(","),
+    self_labels: ((record.labels || {}).values || []).map(v => v.val).join(","),
+    client_tags: (record.tags || []).join(","),
+    ...embedFields(post.embed),
+  };
+}
+
+function csvCell(v) {
+  if (v === undefined || v === null) return "";
+  const s = String(v);
+  return /[",\n\r;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function download(name, parts, type) {
+  const url = URL.createObjectURL(new Blob(parts, { type }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function stripInternal(post) {
+  const { _postUri, ...rest } = post;
+  return _postUri ? { ...rest, uri: _postUri } : rest;
+}
+
+async function exportJob(job, kind) {
+  const name = job.slug;
+  if (kind === "jsonl") {
+    const posts = await db.all("posts", job.id);
+    download(`${name}_posts.jsonl`, posts.map(p => JSON.stringify(stripInternal(p)) + "\n"), "application/x-ndjson");
+  } else if (kind === "profiles") {
+    const profiles = await db.all("profiles", job.id);
+    download(`${name}_profili.jsonl`, profiles.map(p => JSON.stringify(p) + "\n"), "application/x-ndjson");
+  } else {
+    const posts = await db.all("posts", job.id);
+    const profiles = new Map((await db.all("profiles", job.id)).map(p => [p.did, p]));
+    const lines = ["﻿" + CSV_FIELDS.join(",") + "\r\n"];
+    for (const post of posts) {
+      const row = flatten(post, profiles);
+      lines.push(CSV_FIELDS.map(f => csvCell(row[f])).join(",") + "\r\n");
+    }
+    download(`${name}_posts.csv`, lines, "text/csv;charset=utf-8");
+  }
+}
+
+/* =====================================================================
+ * Interfaccia
+ * ===================================================================== */
+
+const $ = id => document.getElementById(id);
+
+function log(msg, level) {
+  const el = $("log");
+  const line = document.createElement("div");
+  const time = new Date().toLocaleTimeString("it-IT");
+  line.textContent = `[${time}] ${msg}`;
+  if (level === "err") line.style.color = "var(--err)";
+  else if (level === "warn") line.style.color = "var(--warn)";
+  else if (level === "ok") line.style.color = "var(--ok)";
+  el.appendChild(line);
+  while (el.childNodes.length > 2000) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+
+function progress(job) {
+  const n = v => v.toLocaleString("it-IT");
+  let hint = "";
+  if (job.state.hitsTotal) hint = ` (circa ${n(job.state.hitsTotal)} stimati da Bluesky)`;
+  else if (job.state.postsCount) hint = ` (il profilo dichiara ${n(job.state.postsCount)} post, repost esclusi)`;
+  $("progress").textContent = `${job.title}: ${n(job.count)} post${hint}`;
+  renderJobs();
+}
+
+function setRunning(on) {
+  $("run-panel").classList.remove("hidden");
+  $("btn-stop").disabled = !on;
+  $("btn-user").disabled = on;
+  $("btn-search").disabled = on || !client.session;
+  document.querySelectorAll("#jobs button[data-act=resume], #jobs button[data-act=delete]")
+    .forEach(b => b.disabled = on);
+}
+
+function renderAuth() {
+  const on = !!client.session;
+  $("login-form").classList.toggle("hidden", on);
+  $("logged-in").classList.toggle("hidden", !on);
+  $("who").textContent = on ? "@" + client.session.handle : "";
+  $("btn-search").disabled = !on || running;
+  $("search-needs-login").classList.toggle("hidden", on);
+}
+
+const STATUS_LABEL = { done: "completata", running: "in corso", stopped: "interrotta", error: "errore" };
+
+let renderToken = 0;
+async function renderJobs() {
+  const token = ++renderToken;
+  const jobs = await db.allJobs();
+  if (token !== renderToken) return;  // evita righe duplicate se chiamata più volte di seguito
+  const tbody = $("jobs");
+  tbody.textContent = "";
+  $("no-jobs").classList.toggle("hidden", jobs.length > 0);
+  for (const job of jobs) {
+    const tr = document.createElement("tr");
+    const status = job.status === "running" && !running ? "stopped" : job.status;
+    tr.innerHTML = `<td></td><td>${job.count.toLocaleString("it-IT")}</td>
+      <td><span class="badge ${status}">${STATUS_LABEL[status]}</span></td>
+      <td>${new Date(job.createdAt).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</td>
+      <td class="actions"></td>`;
+    tr.children[0].textContent = job.title;
+    if (job.error && status === "error") tr.children[2].title = job.error;
+    const actions = tr.querySelector(".actions");
+    const add = (label, act, fn) => {
+      const b = document.createElement("button");
+      b.className = "small"; b.textContent = label; b.dataset.act = act; b.onclick = fn;
+      if (running && (act === "resume" || act === "delete")) b.disabled = true;
+      actions.appendChild(b);
+    };
+    if (job.count) {
+      add("CSV", "csv", () => exportJob(job, "csv"));
+      add("JSONL", "jsonl", () => exportJob(job, "jsonl"));
+      if (job.params.profiles || job.type === "user") add("Profili", "profiles", () => exportJob(job, "profiles"));
+    }
+    if (status !== "done") add("Riprendi", "resume", async () => {
+      if (job.type === "search" && !client.session) return alert("Accedi per riprendere una ricerca.");
+      const fresh = await db.getJob(job.id);
+      fresh.error = null;
+      runJob(fresh);
+    });
+    add("Elimina", "delete", async () => {
+      if (!confirm(`Eliminare “${job.title}” e i suoi ${job.count} post da questo browser?`)) return;
+      await db.deleteJob(job.id);
+      renderJobs();
+    });
+    tbody.appendChild(tr);
+  }
+}
+
+function slug(s) {
+  return s.replace(/^#/, "").replace(/[^\p{L}\p{N}_-]+/gu, "_").replace(/^_+|_+$/g, "").slice(0, 50) || "raccolta";
+}
+
+function newJob(type, params, title) {
+  const id = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()) + Math.random();
+  return { id, type, params, title, slug: `${type === "search" ? "ricerca" : "utente"}_${slug(params.q || params.actor)}`,
+           status: "running", count: 0, state: { until: params.until || null, cursor: null },
+           createdAt: new Date().toISOString() };
+}
+
+const dayStart = d => d ? new Date(d + "T00:00:00Z").toISOString() : undefined;
+const dayEnd = d => d ? new Date(d + "T23:59:59.999Z").toISOString() : undefined;
+const intOrNull = v => { const n = parseInt(v, 10); return n > 0 ? n : null; };
+
+// ---- eventi ----
+
+document.querySelectorAll(".tabs button").forEach(btn => btn.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b === btn));
+  $("tab-search").classList.toggle("hidden", btn.dataset.tab !== "search");
+  $("tab-user").classList.toggle("hidden", btn.dataset.tab !== "user");
+});
+
+$("btn-login").onclick = async () => {
+  const handle = $("handle").value.trim().replace(/^@/, "");
+  const pw = $("apppw").value.trim();
+  const st = $("login-status");
+  if (!handle || !pw) { st.className = "status err"; st.textContent = "Inserisci handle e app password."; return; }
+  st.className = "status"; st.textContent = "Accesso in corso…";
+  $("btn-login").disabled = true;
+  try {
+    await client.login(handle, pw, $("remember").checked);
+    $("apppw").value = "";
+    st.textContent = "";
+    renderAuth();
+  } catch (e) {
+    st.className = "status err";
+    st.textContent = e.status === 401 ? "Handle o app password errati." : e.message;
+  }
+  $("btn-login").disabled = false;
+};
+$("apppw").addEventListener("keydown", e => { if (e.key === "Enter") $("btn-login").click(); });
+
+$("btn-logout").onclick = async () => { await client.logout(); renderAuth(); };
+
+$("btn-search").onclick = () => {
+  const q = $("q").value.trim();
+  if (!q) return alert("Inserisci un termine di ricerca.");
+  const params = { q, since: dayStart($("s-since").value), until: dayEnd($("s-until").value),
+    lang: $("s-lang").value.trim() || undefined, author: $("s-author").value.trim().replace(/^@/, "") || undefined,
+    domain: $("s-domain").value.trim() || undefined, max: intOrNull($("s-max").value),
+    profiles: $("s-profiles").checked };
+  runJob(newJob("search", params, `Ricerca: ${q}`));
+};
+
+$("btn-user").onclick = () => {
+  const actor = $("u-actor").value.trim().replace(/^@/, "").replace(/^https:\/\/bsky\.app\/profile\//, "").replace(/\/.*$/, "");
+  if (!actor) return alert("Inserisci l'handle dell'utente.");
+  const params = { actor, filter: $("u-filter").value, reposts: $("u-reposts").checked,
+    since: dayStart($("u-since").value), max: intOrNull($("u-max").value), profiles: false };
+  runJob(newJob("user", params, `Utente: @${actor}`));
+};
+
+$("btn-stop").onclick = () => { client.stopRequested = true; $("btn-stop").disabled = true; log("Interruzione richiesta…", "warn"); };
+
+window.addEventListener("beforeunload", e => { if (running) { e.preventDefault(); e.returnValue = ""; } });
+
+(async () => {
+  client.loadSession();
+  renderAuth();
+  try { await db.open(); renderJobs(); }
+  catch (e) { alert("Impossibile usare la memoria del browser (IndexedDB): " + e.message); }
+})();
+</script>
+</body>
+</html>
